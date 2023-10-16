@@ -60,8 +60,21 @@ def upsample_to_original(tensor, original_shape):
         tensor = cv2.pyrUp(tensor)
     return tensor
 
-def magnify(video_name, low, high, levels=3, amplification=20, mode='color'):
-    video_tensor, fps = load_video(video_name)
+
+def load_video_chunk(video_filename, start_frame, chunk_size):
+    cap = cv2.VideoCapture(video_filename)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    
+    video_tensor = np.array([cap.read()[1] for _ in range(chunk_size) if cap.get(cv2.CAP_PROP_POS_FRAMES) < frame_count], dtype=np.float32)
+    return video_tensor, fps
+
+def magnify(video_name, low, high, levels=3, amplification=20, mode='color', chunk_size=100):
+    video_tensor, fps = load_video_chunk(video_name, 0, chunk_size)
+
     if mode == 'color':
         pyramid_type = 'gaussian'
     elif mode == 'motion':
