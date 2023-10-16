@@ -55,10 +55,31 @@ def save_video(video_tensor, filename="out.avi"):
         writer.write(cv2.convertScaleAbs(frame))
     writer.release()
 
+#def upsample_to_original(tensor, original_shape):
+#    while tensor.shape[1] < original_shape[1] or tensor.shape[2] < original_shape[2]:
+#        tensor = cv2.pyrUp(tensor)
+#    return tensor
 def upsample_to_original(tensor, original_shape):
-    while tensor.shape[1] < original_shape[1] or tensor.shape[2] < original_shape[2]:
+    while tensor.shape[0] < original_shape[0] or tensor.shape[1] < original_shape[1]:
         tensor = cv2.pyrUp(tensor)
+
+    # Calculate the required padding or cropping
+    diff_height = tensor.shape[0] - original_shape[0]
+    diff_width = tensor.shape[1] - original_shape[1]
+
+    if diff_height > 0:
+        tensor = tensor[:-diff_height, :, :]
+    elif diff_height < 0:
+        tensor = np.pad(tensor, ((0, -diff_height), (0, 0), (0, 0)), mode='constant')
+
+    if diff_width > 0:
+        tensor = tensor[:, :-diff_width, :]
+    elif diff_width < 0:
+        tensor = np.pad(tensor, ((0, 0), (0, -diff_width), (0, 0)), mode='constant')
+
     return tensor
+
+
 
 
 def load_video_chunk(video_filename, start_frame, chunk_size):
@@ -72,27 +93,47 @@ def load_video_chunk(video_filename, start_frame, chunk_size):
     video_tensor = np.array([cap.read()[1] for _ in range(chunk_size) if cap.get(cv2.CAP_PROP_POS_FRAMES) < frame_count], dtype=np.float32)
     return video_tensor, fps
 
-def magnify(video_name, low, high, levels=3, amplification=20, mode='color', chunk_size=100):
-    video_tensor, fps = load_video_chunk(video_name, 0, chunk_size)
 
-    if mode == 'color':
-        pyramid_type = 'gaussian'
-    elif mode == 'motion':
-        pyramid_type = 'laplacian'
+def magnify(video_name, low, high, levels=3, amplification=20, mode='color', chunk_size=100):
+    # If chunk_size is not provided, process the whole video in one go
+    if chunk_size is None:
+        video_tensor, fps = load_video(video_name)
+        total_frames = video_tensor.shape[0]
+        chunks = 1
     else:
-        raise ValueError("Invalid mode. Choose 'color' or 'motion'.")
-    
-    tensor_transformed = process_video(video_tensor, levels, amplification, pyramid_type)
-    filtered = temporal_ideal_filter(tensor_transformed, low, high, fps)
-    
-    # Up-sample the filtered tensor to match the original's shape
-    filtered_upsampled = np.array([upsample_to_original(frame, video_tensor[0].shape) for frame in filtered])
-    
-    result = video_tensor + filtered_upsampled
-    
-    save_video(result)
+        cap = cv2.VideoCapture(video_name)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+
+        # Calculate the number of chunks based on user input
+        chunks = total_frames // chunk_size + (total_frames % chunk_size != 0)
+
+    output_frames = []
+
+    for i in range(chunks):
+        start_frame = i * chunk_size
+        end_frame = min(start_frame + chunk_size, total_frames)  # Handle the last chunk which might be smaller
+        video_tensor, fps = load_video_chunk(video_name, start_frame, end_frame - start_frame)
+
+        if mode == 'color':
+            pyramid_type = 'gaussian'
+        elif mode == 'motion':
+            pyramid_type = 'laplacian'
+        else:
+            raise ValueError("Invalid mode. Choose 'color' or 'motion'.")
+
+        tensor_transformed = process_video(video_tensor, levels, amplification, pyramid_type)
+        filtered = temporal_ideal_filter(tensor_transformed, low, high, fps)
+
+        # Up-sample the filtered tensor to match the original's shape
+        filtered_upsampled = np.array([upsample_to_original(frame, video_tensor[0].shape) for frame in filtered])
+
+        result = video_tensor + filtered_upsampled
+        output_frames.extend(result)
+
+    save_video(np.array(output_frames))
 
 
 
 if __name__ == "__main__":
-    magnify("drone.mp4", 0.4, 3, mode='motion')
+    magnify("drone.mp4", 2, 3, mode='motion', chunk_size=100)
