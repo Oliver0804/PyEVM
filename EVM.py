@@ -148,18 +148,26 @@ def reconstract_from_tensorlist(filter_tensor_list,levels=3):
         final[i]=up
     return final
 
-#manify motion
-def magnify_motion(video_name,low,high,levels=3,amplification=20):
-    t,f=load_video(video_name)
-    lap_video_list=laplacian_video(t,levels=levels)
+def magnify_motion(video_name, low, high, levels=3, amplification=20):
+    t, f = load_video(video_name)
+    lap_video_list = laplacian_video(t, levels=levels)
+
+    # 确保lap_video_list不是空的
+    if not lap_video_list:
+        print("lap_video_list is empty!")
+        return
+    # 計算實際的 Laplacian 金字塔層數
+    actual_levels = len(lap_video_list)
+
     filter_tensor_list=[]
-    for i in range(levels):
+    for i in range(actual_levels): # 使用actual_levels，而不是levels
         filter_tensor=butter_bandpass_filter(lap_video_list[i],low,high,f)
         filter_tensor*=amplification
         filter_tensor_list.append(filter_tensor)
     recon=reconstract_from_tensorlist(filter_tensor_list)
     final=t+recon
     save_video(final)
+
 
 if __name__=="__main__":
     # magnify_color("baby.mp4",0.4,3)
